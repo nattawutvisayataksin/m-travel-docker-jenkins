@@ -37,9 +37,9 @@ docker compose up -d
 |---|---|
 | `Dockerfile` | สร้าง image (nginx:alpine + ไฟล์เว็บทั้งหมด) |
 | `docker-compose.yml` | ประกาศ service `web` + mapping พอร์ท |
-| `deploy/nginx/default.conf` | ค่า nginx (gzip + cache + SPA-ish routing) |
+| `deploy/nginx/default.conf` | ค่า nginx (gzip + cache + routing ปกติ) |
 | `.env.example` | ตัวแปร PORT / ชื่อ image — copy เป็น `.env` ได้ |
-| `.dockerignore` | ตัดไฟล์ไม้ต้องออกจาก build context |
+| `.dockerignore` | ตัดไฟล์ที่ไม่จำเป็นออกจาก build context |
 | `Jenkinsfile` | Pipeline สำหรับ Deploy ผ่าน Jenkins |
 
 ## 🏗️ Deploy ผ่าน Jenkins (Private Cloud)
