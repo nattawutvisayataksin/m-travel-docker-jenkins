@@ -1,0 +1,11 @@
+# รันเว็บ M-Travel บน Local ด้วย Docker Desktop
+#   docker compose up -d --build
+# เปิดเว็บ: http://localhost:8080 (เปลี่ยนได้ที่ .env)
+services:
+  web:
+    build: .
+    image: ${IMAGE_NAME:-m-travel}:${IMAGE_TAG:-local}
+    container_name: m-travel-web
+    ports:
+      - "${PORT:-8080}:80"
+    restart: unless-stopped

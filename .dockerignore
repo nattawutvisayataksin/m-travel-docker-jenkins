@@ -1,0 +1,13 @@
+.git/
+.github/
+.gitignore
+.env
+Dockerfile
+.dockerignore
+docker-compose.yml
+Jenkinsfile
+README.md
+README-DOCKER.md
+supabase-schema.sql
+node_modules/
+*.log
