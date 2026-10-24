@@ -248,6 +248,13 @@ cd C:\Users\Administrator\Desktop\opencode\m-travel-docker-jenkins
 docker compose up -d --build
 ```
 
+### เมื่อกลับมาหลังรีสตาร์ทเครื่อง
+
+1. เปิด Docker Desktop แล้วรอให้สถานะ Running
+2. สั่ง `docker compose ps` — ปกติ container จะกลับมาเอง เพราะ compose ตั้ง restart เป็น unless-stopped ไว้ (ถ้า Docker Desktop ตั้งให้เปิดอัตโนมัติตอนล็อกอิน)
+3. ถ้ายังไม่รัน ให้รันคำสั่งด้านบนอีกครั้ง แล้วเปิด `http://localhost:8080`
+4. เมื่อมาทำ Jenkins ต่อ ให้อ่าน PROJECT-SUMMARY.md ตั้งแต่ section 1 ไปจนถึง section 6 ก่อนลงมือ
+
 ---
 
 *จบไฟล์สรุป — เมื่อกลับมาทำ step Jenkins อ่าน section 6 และไฟล์ `Jenkinsfile` ประกอบ แล้วทำได้เลย เป็นก้าวแรกสู่การ deploy ใน Private Cloud 🚀*
