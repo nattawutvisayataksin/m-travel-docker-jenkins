@@ -1,0 +1,133 @@
+---
+# =====================================================================
+# Fetch TLS certificate pair จาก HashiCorp Vault (KV v2)
+#   path: secret/data/certificates/bu.ac.th   (ใช้ version ล่าสุด หรือ pin v4)
+# → เขียนไฟล์ m-travel.crt / m-travel.key ลง Ubuntu Docker Server
+# → ติดตั้ง nginx HTTPS ผ่าน docker compose profile (docker-compose.ssl.yml)
+#
+# วิธีรัน (จาก Linux/WSL ที่ติดตั้ง ansible-core แล้ว):
+#   export VAULT_TOKEN=hvs.xxxxx          # ใส่ token ผ่าน env ไม่ใส่ในไฟล์
+#   ansible-playbook -i inventory.ini deploy-cert.yml
+#   # pin รุ่นเฉพาะ v4:  ansible-playbook -i inventory.ini deploy-cert.yml -e vault_version=4
+#
+# กติกาความปลอดภัย: playbook อ่านค่าจาก Vault และเขียนไฟล์เงียบ (no_log)
+# ห้ามใส่ token / ค่าลับลงไฟล์นี้หรือแชทเด็ดขาด
+# =====================================================================
+
+- name: Deploy TLS certificate for m-travel nginx from Vault
+  hosts: m-travel
+  gather_facts: false
+
+  vars:
+    vault_addr: "https://hashiva.bu.ac.th"
+    vault_mount: "secret"                    # KV v2 mount
+    vault_path: "certificates/bu.ac.th"
+    vault_version: ""                        # ว่าง = version ล่าสุด (จะอ่าน v4 เมื่อสร้างแล้ว)
+                                             # pin รุ่น: -e vault_version=4
+    vault_token: "{{ vault_token_arg | default(lookup('env', 'VAULT_TOKEN'), true) }}"
+    cert_dir: "/home/me/m-travel-cert"       # โฟลเดอร์ cert จริงบน Ubuntu server
+    repo_dir: "/home/me/m-travel-docker-jenkins"  # ที่อยู่ repo บน server (compose จะถูกรันที่นี่)
+
+  tasks:
+    # ---------- 0) ป้องกันเบื้องต้น ----------
+    - name: เช็คว่ามี Vault token แล้ว (มาจาก env หรือ -e)
+      ansible.builtin.fail:
+        msg: >-
+          ต้องมี VAULT_TOKEN ก่อนรัน playbook
+          (export VAULT_TOKEN=... หรือ -e "vault_token_arg=hvs.xxxx")
+      when: vault_token | length == 0
+
+    # ---------- 1) อ่านความลับจาก Vault (รันที่ controller) ----------
+    - name: อ่าน secret จาก Vault KV v2
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/{{ vault_mount }}/data/{{ vault_path }}{{ '?version=' ~ vault_version if vault_version else '' }}"
+        method: GET
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        return_content: true
+      delegate_to: localhost
+      become: false
+      register: vault_resp
+      no_log: true        # กัน token/secret โผล่ลง log
+      changed_when: false
+
+    - name: ดึงเฉพาะฟิลด์ certificate และ private_key
+      ansible.builtin.set_fact:
+        tls_certificate: "{{ vault_resp.json.data.data.certificate | trim }}"
+        tls_private_key: "{{ vault_resp.json.data.data.private_key | trim }}"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    # ---------- 2) เขียนไฟล์บน server ----------
+    - name: สร้างโฟลเดอร์เก็บ cert
+      ansible.builtin.file:
+        path: "{{ cert_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: เขียนไฟล์ certificate (fullchain — BU.crt มี 3 ใบในไฟล์เดียว)
+      ansible.builtin.copy:
+        content: "{{ tls_certificate }}\n"
+        dest: "{{ cert_dir }}/m-travel.crt"
+        owner: root
+        group: root
+        mode: "0644"
+      no_log: true
+      notify: restart web container
+
+    - name: เขียนไฟล์ private key
+      ansible.builtin.copy:
+        content: "{{ tls_private_key }}\n"
+        dest: "{{ cert_dir }}/m-travel.key"
+        owner: root
+        group: root
+        mode: "0600"        # เข้าอ่านได้เฉพาะ root
+      no_log: true
+      notify: restart web container
+
+    # ---------- 3) sanity check: cert กับ key ต้องเป็นคู่เดียวกัน ----------
+    - name: ตรวจคู่ cert/key ด้วย openssl (public key ต้องตรงกัน)
+      ansible.builtin.shell: |
+        set -o pipefail
+        [ "$(openssl x509 -in {{ cert_dir }}/m-travel.crt -noout -pubkey | openssl sha256)" = \
+          "$(openssl pkey -in {{ cert_dir }}/m-travel.key -pubout | openssl sha256)" ]
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: แสดงวันหมดอายุจริงของ cert (จากไฟล์ ไม่ใช้ฟิลด์ expires_at ใน Vault)
+      ansible.builtin.command: "openssl x509 -in {{ cert_dir }}/m-travel.crt -noout -enddate -subject"
+      changed_when: false
+
+    # ---------- 4) อัปเดต repo บน server (มี config SSL พร้อมใช้) ----------
+    - name: git clone / update m-travel repo ลง server
+      ansible.builtin.git:
+        repo: "https://github.com/nattawutvisayataksin/m-travel-docker-jenkins.git"
+        dest: "{{ repo_dir }}"
+        version: main
+        update: true
+
+    # ---------- 5) deploy nginx HTTPS ----------
+    - name: docker compose up ด้วยโปรไฟล์ SSL (mount nginx conf + cert เข้า container)
+      ansible.builtin.command: >-
+        docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+      args:
+        chdir: "{{ repo_dir }}"
+
+    # ---------- 6) smoke test ----------
+    - name: ตรวจว่า HTTPS ตอบ 200 (ภายใน server ไม่ validate cert เพราะมองด้วย IP)
+      ansible.builtin.uri:
+        url: "https://localhost:{{ https_port | default(443) }}/"
+        validate_certs: false
+      register: smoke
+      failed_when: smoke.status != 200
+
+  handlers:
+    - name: restart web container
+      ansible.builtin.command: >-
+        docker compose -f docker-compose.yml -f docker-compose.ssl.yml restart web
+      args:
+        chdir: "{{ repo_dir }}"

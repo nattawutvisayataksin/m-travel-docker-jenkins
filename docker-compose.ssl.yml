@@ -1,0 +1,21 @@
+# โปรไฟล์ HTTPS สำหรับ Docker server จริง (Ubuntu) — ใช้คู่กับ docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ssl.yml up -d --build
+#
+# เงื่อนไขตอนรัน:
+#   - มีไฟล์ m-travel.crt / m-travel.key อย่างละ 1 ไฟล์ใน ${CERT_DIR}
+#     (ค่า default: /home/me/m-travel-cert — playbook ของ ansible เขียนไฟล์เหล่านี้ให้เสร็จก่อนเสมอ)
+#   - DNS/ผู้เข้าเว็บ: ควรมีโดเมนที่ชี้มาที่ server นี้ เช่น m-travel.bu.ac.th → 10.119.16.105
+#     แม้จะเรียกผ่าน IP ก็ยังใช้งานได้ แต่ browser จะฟ้องว่าชื่อโดเมนบน cert ไม่ตรง
+#
+# หมายเหตุ: บนเครื่อง local (Docker Desktop / Windows) ไม่ต้องใช้ไฟล์นี้ —
+# รัน docker compose up -d --build แบบเดิมก็ยังเป็น HTTP พอร์ต 8080 เหมือนเดิม
+
+services:
+  web:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx/default-ssl.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${CERT_DIR:-/home/me/m-travel-cert}/m-travel.crt:/etc/nginx/certs/m-travel.crt:ro
+      - ${CERT_DIR:-/home/me/m-travel-cert}/m-travel.key:/etc/nginx/certs/m-travel.key:ro
