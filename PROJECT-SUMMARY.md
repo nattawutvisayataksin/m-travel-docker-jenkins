@@ -1,6 +1,6 @@
 # 📓 สรุปผลงานและคู่มือ — M-Travel Docker Edition
 
-> โปรเจกต์: `m-travel-docker-jenkins` · อัปเดต: 22 ต.ค. 2026
+> โปรเจกต์: `m-travel-docker-jenkins` · อัปเดต: 26 ต.ค. 2026 (รอบ 2 — cert/Vault/AWX ดู Section 8)
 > ไฟล์นี้รวม: สรุปผลงาน, สถาปัตยกรรม, โครงสร้างไฟล์, คู่มือคำสั่ง Docker, และแผน step ถัดไป (Jenkins)
 
 ---
@@ -239,7 +239,7 @@ environment {
 | 🗃️ ระบบ Database | Supabase Cloud (ตาม `assets/js/config.js`) |
 | 🔗 Repo ต้นฉบับเดิม | `github.com/nattawutvisayataksin/m-travel` |
 | 🔗 Repo ปัจจุบัน (มี Docker) | `github.com/nattawutvisayataksin/m-travel-docker-jenkins` |
-| ⚙️ ไฟล์สำคัญสำหรับทำต่อ | `Jenkinsfile` + `docker-compose.yml` + `README-DOCKER.md` |
+| ⚙️ ไฟล์สำคัญสำหรับทำต่อ | **Section 8 (checkpoint รอบ 2)** + `ansible/README.md` + `Jenkinsfile` |
 
 ### คำสั่งเริ่มใหม่เมื่อกลับมา
 
@@ -258,3 +258,59 @@ docker compose up -d --build
 ---
 
 *จบไฟล์สรุป — เมื่อกลับมาทำ step Jenkins อ่าน section 6 และไฟล์ `Jenkinsfile` ประกอบ แล้วทำได้เลย เป็นก้าวแรกสู่การ deploy ใน Private Cloud 🚀*
+
+---
+
+## 8) 🧊 Checkpoint รอบที่ 2 — Cert + Vault + Ansible/AWX (24–26 ต.ค. 2026)
+
+> อ่าน section นี้ก่อนทุกอย่างเมื่อกลับมาทำต่อ
+
+### ไฟล์ที่เพิ่ม/แก้ในรอบนี้ (commit `2a86f56` และ `31df060` push แล้ว)
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `ansible/inventory.ini` | inventory สำหรับรัน CLI — `[vault-deploy]` = **10.119.16.205 (เครื่องใหม่, เป้าปัจจุบัน)** · `[legacy]` = **10.119.16.105** (Docker server เครื่องเก่า) |
+| `ansible/deploy-cert.yml` | ⭐ playbook หลัก: อ่าน `certificate`+`private_key` จาก Vault KV v2 → เขียน `m-travel.crt/.key` บน server → ตรวจคู่ด้วย openssl → git clone repo → `docker compose` โปรไฟล์ SSL → smoke test ต้อง 200 · ติดตั้ง curl/git/openssl/Docker ให้เองถ้าเป้าหมายไม่มี · override ผ่าน host var/extra var ชื่อ `_vault_version` `_cert_dir` `_repo_dir` `_https_port` ฯลฯ |
+| `ansible/README.md` | คู่มือรัน CLI + ขั้นตอนตั้ง **AWX 24.6.1** ครบ 6 ขั้น (Project / Vault Token Credential Type / Machine credential / Inventory host variables / Job Template / Launch) |
+| `docker-compose.ssl.yml` | โปรไฟล์ HTTPS: เพิ่ม port 443 + bind `default-ssl.conf` ทับ default + bind ไฟล์ cert จาก `${CERT_DIR}` (local เดิมไม่กระทบ — ยังรัน HTTP 8080 ได้ตามปกติ) |
+| `deploy/nginx/default-ssl.conf` | nginx HTTPS: `listen 443 ssl` + TLSv1.2/1.3 + http2 + `return 301 https://$host$request_uri` (จาก 80) |
+| `.gitignore` | เพิ่ม `m-travel-cert/` — โฟลเดอร์ cert/key ห้ามขึ้น Git เด็ดขาด |
+
+> ผ่านการ validate แล้ว: YAML parse ✅ · `docker compose config` merge ✅ · `nginx -t` syntax ok ✅
+
+### บันทึกเรื่อง certificate (กันลืม)
+
+| หัวข้อ | ข้อเท็จจริง |
+|---|---|
+| ไฟล์ที่ใช้จริง | `BU.crt` (fullchain 3 ใบ) + `BU.key` — **เป็นคู่กันถูกต้อง**ตรวจด้วย public-key hash |
+| โดเมน / ผู้ออก | `*.bu.ac.th` / GoDaddy (G2) · ใช้ได้ถึง **15 ธ.ค. 2026** → เตือนตัวเอง renew ก่อน ~15 พ.ย. 2026 |
+| ไฟล์เก่าซ้ำ | `BU2024.crt/.key` = เนื้อหาเดียวกับ `BU.crt/.key` · `BU.pfx` = แพ็กเกจ PFX (password `B@ngk0kUni` ระบุไว้ในตัว secret ของ Vault) |
+| Vault | mount `secret` (KV v2) path `certificates/bu.ac.th` — **v3** มี cert/key ชุดเดียวกับไฟล์ต้นฉบับ (ตรวจด้วย serial + modulus) · ฟิลด์ `expires_at` ใน v3 เป็น "2027-01-3" **ผิด** (ค่าจริงคือ 2026-12-15) |
+| ไฟล์ cert ที่ server | ดึงมาผ่าน **WinSCP** จาก `/home/me/m-travel-cert/` บน .105 มาเก็บที่ `m-travel-cert\m-travel-cert\` ที่เครื่องนี้ |
+
+### SSH config ที่เพิ่มไว้ที่เครื่องนี้
+
+- เพิ่ม `node3` (alias `docker`) = `10.119.16.105`, user `root`, ใช้ key `id_ed25519` เดิม — แต่ **ยัง authorize ไม่สำเร็จ** (เปิด password ครั้งเดียวก็ไม่ได้ทำ) จึงใช้ WinSCP ไปทางนั้นเมื่อต้องการ หรือกลับมาทำตามคำแนะนำในบทสนทนา (ssh-copy-id ครั้งเดียว)
+
+### ⚠️ ปมความปลอดภัยที่ค้างไว้ (ต้องเดินต่อเมื่อกลับมา)
+
+- เกิดการ paste **private key + pfx_password** เข้าบทสนทนาหลายครั้ง → ถือว่าค่าดังกล่าว **leaked** แล้ว (ทั้งฝั่งผู้ให้บริการโมเดล และ log ฝั่งเครื่อง)
+- 📌 **ทางแก้จริงจัง (เลือกอย่างน้อย 1 ทางเมื่อกลับมา):**
+  - **A. GoDaddy rekey (แนะนำสุด)** — ออก CSR/key ใหม่ → reissue ใน GoDaddy (ฟรีใน validity) → ทิ้ง key เดิมทุกแหล่งที่หาได้
+  - **B. Rotate `pfx_password`** — reconstruct `BU.pfx` ด้วย password ใหม่ (generate ตอนจอด + เก็บใน Vault ด้วย API ไม่ผ่านแชท)
+  - **C. ตัด field `pfx_base64`/`pfx_password` ออกจาก schema v4** — ถ้า Ansible/AWX ใช้แค่ crt+key (nginx ใช้แค่นี้ แนะนำมาก)
+- กติกา: **กลับมาทำไม่ว่าอะไร ห้าม paste ค่าลับลงแชทอีก** — ให้อ่านจาก path ไฟล์เช่น `m-travel-cert/` (gitignored) หรือให้ AWX/Ansible อ่านจาก Vault โดยตรง
+
+### ✅ ลำดับงานสำหรับกลับมาทำต่อ (แนะนำ)
+
+1. ตั้งค่า AWX ตามไฟล์ `ansible/README.md` (Project Git sync → Credential Type "Vault Token" → Machine credential ของ root@.205 → Inventory host variables ของ host `.205` → Job Template)
+2. เลือกทางแก้ความปลอดภัย (A/B/C ข้างบน) อย่างน้อยทาง A หรือ B
+3. (ถ้าจะดูแลให้ต่อ) สร้าง **Vault v4** ผ่าน UI หรือ API — ผ่าน API ให้ใส่ `options: {cas: 3}` เพื่อรับประกันเกิดเป็น version 4 แน่นอน
+4. รัน Job Template ใน AWX — default playbook อ่านเวอร์ชันล่าสุด... หากอยาก pin v4 ให้ใส่ extra var `_vault_version: "4"`
+5. ทดสอบผ่านโดเมนจริง: แนะนำ DNS `m-travel.bu.ac.th → 10.119.16.205` แล้วเข้าโดเมนตรง ๆ (cert เป็น wildcard `*.bu.ac.th` พอเรียกผ่าน IP browser จะฟ้อง mismatch)
+6. แล้วจึงกลับไปทำแผน **Jenkins** ตาม Section 6 เดิมต่อได้
+
+### สภาพแวดล้อมตอนหยุดพัก (ไม่ต้องทำอะไร)
+
+- container `m-travel-web` ยังรันอยู่บนเครื่องนี้ (`restart: unless-stopped`) — ปล่อยไว้ได้
+- กลับมาต่อ: เปิดโปรเจกต์ที่โฟลเดอร์นี้อีกครั้ง อ่าน Section 8 → ลงมือต่อทันที 💪
